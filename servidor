@@ -19,10 +19,188 @@ def dados_recebidos(conexao, dados):
     print(conexao, dados)
 
 
-def conexao_aceita(conexao):
-    print(conexao, 'nova conexão')
-    conexao.registrar_recebedor(dados_recebidos)
+	global opcao
+	
+	if data == b'':
+		return sair(conexao)
+	
+	cont = re.split(b'(\n)', data)
+	
+	for frag in cont:
+		opcao += frag
+		
+		if frag.endswith(b'\n'):
+			client(conexao, opcao)
+			
+			opcao = b''
 
+
+def conexao_aceita(conexao):
+	print(conexao, 'nova conexão')
+	conexao.registrar_recebedor(dados_recebidos)
+
+def client(conexao, opcao):
+	print(conexao, opcao)
+	
+	
+	if opcao.startswith(b'PING '):
+		do_ping(conexao, opcao.split(b' ', 1)[1])
+	
+	elif opcao.startswith(b'NICK '):
+		nome = opcao[5:-1]
+		
+		if nome.endswith(b'\r'):
+			nome = nome[:-1]
+		
+		if (conexao in nicks.keys()):
+			nick_update(conexao, nome)
+		else:
+			nick_creation(conexao, nome)
+	
+	elif opcao.startswith(b'PRIVMSG '):
+		
+		if nicks.get(conexao) != None:
+			mensagem_destino = re.split(b':', opcao[8:])
+			destino = mensagem_destino[0][:-1]
+			msg = mensagem_destino[1]
+			origem = nicks[conexao]
+			send_message(conexao, origem, destino, msg)
+		else:
+			conexao.enviar(b':server 404 * :Nickname is missing\r\n')
+	
+	elif opcao.startswith(b'JOIN '):
+		
+		if nicks.get(conexao) != None:
+			channel = opcao[5:-1]
+			if channel.endswith(b'\r'):
+				channel = channel[:-1]
+			enter_channel(conexao, channel)
+		else:
+			conexao.enviar(b':server 404 * :Nickname is missing\r\n')
+	
+	elif opcao.startswith(b'PART '):
+	
+		if nicks.get(conexao) != None:
+			part = re.split(b':', opcao[5:])
+			channel = part[0][:-1]
+			if channel.endswith(b'\r'):
+				channel = channel[:-1]
+			leave_channel(conexao, channel)
+		else:
+			conexao.enviar(b':server 404 * :Nickname is missing\r\n')
+
+
+def do_ping(conexao, payload):
+	conexao.enviar(b':server PONG server :'+payload)
+
+def nick_creation(conexao, nick):
+
+	if(nick.upper() in (upnick.upper() for upnick in nicks.values())):
+		conexao.enviar(b':server 433 * '+ nick+ b' :Nickname is already in use\r\n')
+	else:
+		
+		if (validar_nome(nick)):
+			nicks[conexao] = nick
+			
+			conexao.enviar(b':server 001 '+ nick+ b' :Welcome\r\n')
+			conexao.enviar(b':server 422 '+ nick+ b' :MOTD File is missing\r\n')
+		else:
+			conexao.enviar(b':server 432 * '+ nick+ b' :Erroneous nickname\r\n')
+
+def nick_update(conexao, nick):
+	nickAtual = nicks[conexao]
+	
+	if(nick.upper() in (upnick.upper() for upnick in nicks.values())):
+		conexao.enviar(b':server 433 '+ nickAtual + b' '+ nick+ b' :Nickname is already in use\r\n')
+	else:
+		
+		if (validar_nome(nick)):
+			nicks[conexao] = nick
+			conexao.enviar(b':'+ nickAtual + b' NICK '+ nick+ b'\r\n')
+		else:
+			conexao.enviar(b':server 432 '+ nickAtual + b' '+ nick+ b' :Erroneous nickname\r\n')
+
+def send_message(conexao, origem, destino, mensagem):
+
+	if(destino. startswith(b'#')):
+		channel = destino
+		
+		for cont in groups:
+			if channel.upper() in (canal_em_canal.upper() for canal_em_canal in cont):
+			
+				for nick in cont[1:]:
+					
+					if nick == origem:
+						continue
+					conexao_key = get_key(nick)
+					if conexao_key != 0:
+						conexao_key.enviar(b':' + origem + b' PRIVMSG ' + channel + b' :' + mensagem)
+					else:
+						print('FAILED')
+	
+	else:
+		conexao_key = get_key(destino)
+		if conexao_key != 0:
+			conexao_key.enviar(b':' + origem + b' PRIVMSG ' + destino + b' :' + mensagem)
+		else:
+			print(destino, ' has a bad key')
+
+def get_key(val): 
+    for chave, value in nicks.items(): 
+        if val.upper() == value.upper(): 
+            return chave 
+	
+    return 0
+
+def enter_channel(conexao, channel):
+	
+	if channel.startswith(b'#'):
+	
+		if validar_nome(channel[1:]):
+			
+			for cont in groups:
+				
+				if channel.upper() in (canal_em_canal.upper() for canal_em_canal in cont):
+					cont.append(nicks[conexao])
+					
+					notify_channel(nicks[conexao], channel)
+					return None
+			
+			canal_list = [channel, nicks[conexao]]
+			groups.append(canal_list)
+			
+			notify_channel(nicks[conexao],channel)
+		else:
+			conexao.enviar(b':server 403 '+ channel+b' :No such channel\r\n')
+	else:
+		conexao.enviar(b':server 403 '+ channel+b' :No such channel\r\n')
+
+def notify_channel(new_member, canal_name):
+	
+	for cont in groups:
+		if canal_name in cont:
+			for nick in cont[1:]:
+			
+				conexao_key = get_key(nick)
+				if conexao_key != 0:
+					conexao_key.enviar(b':'+new_member+b' JOIN :'+canal_name+b'\r\n')
+				else:
+					print('FAILED')
+
+
+def leave_channel(conexao, channel):
+	
+	for cont in groups:
+		if channel.upper() in (canal_em_canal.upper() for canal_em_canal in cont):
+			
+			for nick in cont[1:]:
+				conexao_key = get_key(nick)
+				if conexao_key != 0:
+					conexao_key.enviar(b':' + nicks[conexao] + b' PART ' + channel + b'\r\n')
+				else:
+					print('FAILED')
+			
+			cont.remove(nicks[conexao])
 
 servidor = Servidor(6667)
 servidor.registrar_monitor_de_conexoes_aceitas(conexao_aceita)
