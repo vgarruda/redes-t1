@@ -44,10 +44,10 @@ def dados_recebidos(conexao, dados):
 	
 	global opcao
 	
-	if data == b'':
+	if dados == b'':
 		return sair(conexao)
 	
-	cont = re.split(b'(\n)', data)
+	cont = re.split(b'(\n)', dados)
 	
 	for frag in cont:
 		opcao += frag
