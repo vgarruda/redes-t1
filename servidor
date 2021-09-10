@@ -4,21 +4,44 @@ from tcp import Servidor
 import re
 
 
-def validar_nome(nome):
-    return re.match(br'^[a-zA-Z][a-zA-Z0-9_-]*$', nome) is not None
+option = b''
 
+nicks = {}
+
+groups = []
+
+def validar_nome(nome):
+	return re.match(br'^[a-zA-Z][a-zA-Z0-9_-]*$', nome) is not None
 
 def sair(conexao):
-    print(conexao, 'conexão fechada')
-    conexao.fechar()
 
-
+	if not nicks:
+		print(conexao, 'conexão fechada')
+		conexao.fechar()
+	
+	else:
+		for cont in groups:
+		
+			if nicks[conexao].upper() in (apelido_em_canal.upper() for apelido_em_canal in cont[1:]):
+				
+				for nick in cont[1:]:
+				
+					if nick == nicks[conexao]:
+						continue
+					conexao_key = get_key(nick)
+					if conexao_key != 0:
+						conexao_key.enviar(b':' + nicks[conexao] + b' QUIT :Connection closed\r\n')
+					else:
+						print('FAILED')
+				
+				cont.remove(nicks[conexao])
+		
+		print(conexao, 'conexão fechada')
+		conexao.fechar()
+		
+		
 def dados_recebidos(conexao, dados):
-    if dados == b'':
-        return sair(conexao)
-    print(conexao, dados)
-
-
+	
 	global opcao
 	
 	if data == b'':
